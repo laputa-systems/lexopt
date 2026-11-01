@@ -1306,10 +1306,7 @@ mod tests {
         let positional = p.next_owned()?.unwrap();
         assert_eq!(positional.as_ref(), ArgRef::Value(OsStr::new("path")));
         let after_separator = p.next_owned()?.unwrap();
-        assert_eq!(
-            after_separator.as_ref(),
-            ArgRef::Value(OsStr::new("--literal"))
-        );
+        assert_eq!(after_separator.as_ref(), ArgRef::Value(OsStr::new("--literal")));
         assert_eq!(p.next_owned()?, None);
 
         // The owned arguments still exist after more parser calls.
@@ -1338,6 +1335,12 @@ mod tests {
         let value = Arg::Value(OsString::from("hello")).into_owned();
         assert_eq!(value.as_ref(), ArgRef::Value(OsStr::new("hello")));
         assert_eq!(value, OwnedArg::Value("hello".into()));
+
+        // Preserve raw platform-specific data, including non-Unicode OS strings.
+        let raw = bad_string("@");
+        let value = Arg::Value(raw.clone()).into_owned();
+        assert_eq!(value.as_ref(), ArgRef::Value(raw.as_os_str()));
+        assert_eq!(value, OwnedArg::Value(raw));
         Ok(())
     }
 
