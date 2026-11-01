@@ -149,6 +149,84 @@ pub enum Arg<'a> {
     Value(OsString),
 }
 
+/// An argument that owns all its data and does not borrow from a [`Parser`].
+///
+/// Convert an [`Arg`] with [`Arg::into_owned`] or use [`Parser::next_owned`].
+/// Long option names are cloned; short options and positional arguments
+/// are moved without an additional allocation.
+///
+/// Use [`as_ref()`](OwnedArg::as_ref) to match long option names against string
+/// literals, just as with [`Arg`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum OwnedArg {
+    /// A short option, e.g. `-q`.
+    Short(char),
+    /// A long option without the leading dashes, e.g. `verbose`.
+    Long(String),
+    /// A positional argument, including potentially non-Unicode data.
+    Value(OsString),
+}
+
+/// A borrowed view of an [`OwnedArg`], suitable for literal-pattern matching.
+///
+/// Unlike [`Arg`], the positional argument is borrowed as an [`OsStr`]
+/// rather than moved as an [`OsString`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArgRef<'a> {
+    /// A short option, e.g. `-q`.
+    Short(char),
+    /// A long option without the leading dashes, e.g. `verbose`.
+    Long(&'a str),
+    /// A borrowed positional argument.
+    Value(&'a OsStr),
+}
+
+impl From<Arg<'_>> for OwnedArg {
+    fn from(arg: Arg<'_>) -> Self {
+        match arg {
+            Arg::Short(short) => OwnedArg::Short(short),
+            Arg::Long(long) => OwnedArg::Long(long.to_owned()),
+            Arg::Value(value) => OwnedArg::Value(value),
+        }
+    }
+}
+
+impl OwnedArg {
+    /// Borrow this argument for pattern matching without allocating.
+    ///
+    /// The resulting [`ArgRef`] is tied to this argument, not to the parser.
+    ///
+    /// ```
+    /// # fn main() -> Result<(), lexopt::Error> {
+    /// use lexopt::{ArgRef, Parser};
+    /// let mut parser = Parser::from_args(&["--output=data"]);
+    /// let arg = parser.next_owned()?.unwrap();
+    /// match arg.as_ref() {
+    ///     ArgRef::Short('o') | ArgRef::Long("output") => {
+    ///         assert_eq!(parser.value()?, "data");
+    ///     }
+    ///     _ => unreachable!(),
+    /// }
+    /// # Ok(()) }
+    /// ```
+    pub fn as_ref(&self) -> ArgRef<'_> {
+        match self {
+            OwnedArg::Short(short) => ArgRef::Short(*short),
+            OwnedArg::Long(long) => ArgRef::Long(long),
+            OwnedArg::Value(value) => ArgRef::Value(value.as_os_str()),
+        }
+    }
+
+    /// Convert an unexpected owned argument into an error.
+    pub fn unexpected(self) -> Error {
+        match self {
+            OwnedArg::Short(short) => Error::UnexpectedOption(format!("-{}", short)),
+            OwnedArg::Long(long) => Error::UnexpectedOption(format!("--{}", long)),
+            OwnedArg::Value(value) => Error::UnexpectedArgument(value),
+        }
+    }
+}
+
 impl Parser {
     /// Get the next option or positional argument.
     ///
@@ -389,6 +467,18 @@ impl Parser {
                 Ok(Some(Arg::Value(arg.into())))
             }
         }
+    }
+
+    /// Get the next argument without borrowing from the parser.
+    ///
+    /// Unlike [`next()`](Parser::next), this returns an [`OwnedArg`] that
+    /// can be retained while using the parser again. Long option names are
+    /// cloned; short options and positional arguments need no extra allocation.
+    /// Use [`OwnedArg::as_ref`] for string-literal pattern matching.
+    ///
+    /// Parsing rules and errors are identical to [`next()`](Parser::next).
+    pub fn next_owned(&mut self) -> Result<Option<OwnedArg>, Error> {
+        self.next().map(|arg| arg.map(Arg::into_owned))
     }
 
     /// Get a value for an option.
@@ -831,6 +921,15 @@ impl Parser {
 }
 
 impl Arg<'_> {
+    /// Make this argument independent of the parser.
+    ///
+    /// This clones a long option name, but moves short options and positional
+    /// arguments without allocating. For literal-pattern matching, call
+    /// [`OwnedArg::as_ref`] on the result.
+    pub fn into_owned(self) -> OwnedArg {
+        self.into()
+    }
+
     /// Convert an unexpected argument into an error.
     pub fn unexpected(self) -> Error {
         match self {
@@ -1193,6 +1292,63 @@ mod tests {
                 ),
             }
         };
+    }
+
+    #[test]
+    fn owned_arguments_do_not_borrow_parser() -> Result<(), Error> {
+        let mut p = parse("--output=data -v path -- --literal");
+        let output = p.next_owned()?.unwrap();
+        assert_eq!(output.as_ref(), ArgRef::Long("output"));
+        assert_eq!(p.value()?, "data");
+
+        let short = p.next_owned()?.unwrap();
+        assert_eq!(short.as_ref(), ArgRef::Short('v'));
+        let positional = p.next_owned()?.unwrap();
+        assert_eq!(positional.as_ref(), ArgRef::Value(OsStr::new("path")));
+        let after_separator = p.next_owned()?.unwrap();
+        assert_eq!(
+            after_separator.as_ref(),
+            ArgRef::Value(OsStr::new("--literal"))
+        );
+        assert_eq!(p.next_owned()?, None);
+
+        // The owned arguments still exist after more parser calls.
+        assert_eq!(output, OwnedArg::Long("output".to_owned()));
+        assert_eq!(short, OwnedArg::Short('v'));
+        assert_eq!(positional, OwnedArg::Value("path".into()));
+        assert_matches!(output.unexpected(), Error::UnexpectedOption(_));
+        assert_matches!(short.unexpected(), Error::UnexpectedOption(_));
+        assert_matches!(positional.unexpected(), Error::UnexpectedArgument(_));
+        Ok(())
+    }
+
+    #[test]
+    fn owned_arguments_keep_option_context_and_matching() -> Result<(), Error> {
+        let mut p = parse("--missing");
+        let arg = p.next()?.unwrap().into_owned();
+        match arg.as_ref() {
+            ArgRef::Short('m') | ArgRef::Long("missing") => (),
+            _ => panic!("unexpected argument"),
+        }
+        assert_eq!(
+            p.value().unwrap_err().to_string(),
+            "missing argument for option '--missing'"
+        );
+
+        let value = Arg::Value(OsString::from("hello")).into_owned();
+        assert_eq!(value.as_ref(), ArgRef::Value(OsStr::new("hello")));
+        assert_eq!(value, OwnedArg::Value("hello".into()));
+
+        // Preserve raw platform-specific data, including non-Unicode OS strings.
+        let raw = bad_string("@");
+        let value = Arg::Value(raw.clone()).into_owned();
+        assert_eq!(value.as_ref(), ArgRef::Value(raw.as_os_str()));
+        assert_eq!(value, OwnedArg::Value(raw));
+
+        let mut p = parse("--flag=unexpected");
+        assert_eq!(p.next_owned()?.unwrap().as_ref(), ArgRef::Long("flag"));
+        assert_matches!(p.next_owned(), Err(Error::UnexpectedValue { .. }));
+        Ok(())
     }
 
     #[test]
