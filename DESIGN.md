@@ -27,7 +27,6 @@ positional `OsString`, and `OwnedArg::as_ref()` returns an `ArgRef` for
 matching `Long("name")` patterns without copies. This adds a small amount of
 API surface, but doesn't affect the fast borrowed path or require nightly Rust.
 
-
 Arguments on Windows sometimes have to be transcoded three times: from UTF-16 to WTF-8 by `args_os`, then back to UTF-16 to parse them, then to WTF-8 again to be used. This ensures we see the original invalid code unit if there's a problem, but it's a bit sad. (Luckily it only happens very rarely.)
 
 # Errors
