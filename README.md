@@ -88,6 +88,35 @@ This covers most of the functionality in the library. Lexopt does very little fo
 
 For a larger example with useful patterns, see [`examples/cargo.rs`](examples/cargo.rs).
 
+## Keeping arguments beyond a parser call
+Normally [`Parser::next()`](https://docs.rs/lexopt/latest/lexopt/struct.Parser.html#method.next)
+returns an `Arg` that borrows the parser when it contains a long option.
+This is efficient for ordinary parsing, but can be inconvenient for reusable
+subcommand parsers or other abstractions that retain arguments.
+
+[`Parser::next_owned()`](https://github.com/laputa-systems/lexopt) returns an
+`OwnedArg` that can be retained while the parser advances. Use `as_ref()`
+to get an allocation-free `ArgRef` view with the same short/long literal
+matching syntax:
+
+```rust
+# fn main() -> Result<(), lexopt::Error> {
+let mut parser = lexopt::Parser::from_args(&["--output=report.txt"]);
+let arg = parser.next_owned()?.unwrap();
+match arg.as_ref() {
+    lexopt::ArgRef::Short('o') | lexopt::ArgRef::Long("output") => {
+        assert_eq!(parser.value()?, "report.txt");
+    }
+    _ => unreachable!(),
+}
+# Ok(()) }
+```
+
+This is **opt-in**: `next()` keeps its original API and allocation behavior.
+Owning a long option clones its name; short options and positional
+`OsString` values are moved without another allocation.
+The borrowed view of a positional argument is an `&OsStr`.
+
 ## Command line syntax
 The following conventions are supported:
 - Short options (`-q`)
