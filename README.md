@@ -94,7 +94,7 @@ returns an `Arg` that borrows the parser when it contains a long option.
 This is efficient for ordinary parsing, but can be inconvenient for reusable
 subcommand parsers or other abstractions that retain arguments.
 
-[`Parser::next_owned()`](https://github.com/laputa-systems/lexopt) returns an
+`Parser::next_owned()` returns an
 `OwnedArg` that can be retained while the parser advances. Use `as_ref()`
 to get an allocation-free `ArgRef` view with the same short/long literal
 matching syntax:
