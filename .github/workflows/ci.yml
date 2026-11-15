@@ -10,14 +10,14 @@ jobs:
         os: [ubuntu-26.04, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
       - run: cargo test
 
   test_wasi:
     name: Test (WASI)
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
       - run: .github/setup_wasmtime.sh
       - run: rustup target add wasm32-wasip1 wasm32-wasip2
       - run: cargo test --target wasm32-wasip1
@@ -27,7 +27,7 @@ jobs:
     name: Fuzz
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
       - run: cargo install cargo-fuzz
       # Two minutes is a very short time to fuzz, but we have a very small state space.
       # I sometimes fuzz locally for an hour or so.
@@ -37,7 +37,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
       - run: rustup target add x86_64-pc-windows-msvc wasm32-wasip2
 
       - name: clippy (Linux)
