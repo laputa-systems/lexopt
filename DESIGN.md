@@ -21,6 +21,12 @@ Sometimes Rust is a bother.
 
 (Deref patterns would fix this, and if/when they're released I'll probably do a breaking release with a huge MSRV bump. I consider them a prerequisite for 1.0.)
 
+Until deref patterns are stable, `Parser::next_owned` and `Arg::into_owned`
+provide an opt-in workaround. `OwnedArg` owns its long-option `String` and
+positional `OsString`, and `OwnedArg::as_ref()` returns an `ArgRef` for
+matching `Long("name")` patterns without copies. This adds a small amount of
+API surface, but doesn't affect the fast borrowed path or require nightly Rust.
+
 Arguments on Windows sometimes have to be transcoded three times: from UTF-16 to WTF-8 by `args_os`, then back to UTF-16 to parse them, then to WTF-8 again to be used. This ensures we see the original invalid code unit if there's a problem, but it's a bit sad. (Luckily it only happens very rarely.)
 
 # Errors
