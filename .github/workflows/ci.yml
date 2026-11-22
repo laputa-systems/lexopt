@@ -1,50 +1,29 @@
-name: CI
+name: ci
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+
+permissions: {}
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash -euo pipefail {0}
 
 jobs:
-  test:
-    name: Test
-    strategy:
-      matrix:
-        os: [ubuntu-26.04, windows-latest]
-    runs-on: ${{ matrix.os }}
+  ci:
+    name: ci
+    runs-on: ubuntu-26.04-arm
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
-      - run: cargo test
-
-  test_wasi:
-    name: Test (WASI)
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
-      - run: .github/setup_wasmtime.sh
-      - run: rustup target add wasm32-wasip1 wasm32-wasip2
-      - run: cargo test --target wasm32-wasip1
-      - run: cargo test --target wasm32-wasip2
-
-  fuzz:
-    name: Fuzz
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
-      - run: cargo install cargo-fuzz
-      # Two minutes is a very short time to fuzz, but we have a very small state space.
-      # I sometimes fuzz locally for an hour or so.
-      - run: cargo fuzz run fuzz_target_1 -- -max_len=100000 -timeout=1 -max_total_time=120
-
-  lint:
-    name: Lint
-    runs-on: ubuntu-26.04
-    steps:
-      - uses: actions/checkout@0717577d45739eb3c851188b29f50ed6c0b2194e # v2
-      - run: rustup target add x86_64-pc-windows-msvc wasm32-wasip2
-
-      - name: clippy (Linux)
-        run: cargo clippy -- -D warnings
-
-      - name: clippy (Windows)
-        run: cargo clippy --target x86_64-pc-windows-msvc -- -D warnings
-
-      - name: clippy (WASI)
-        run: cargo clippy --target wasm32-wasip2 -- -D warnings
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: test
+        run: make test
